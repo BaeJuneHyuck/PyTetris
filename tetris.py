@@ -112,9 +112,6 @@ shape_rotate = [2, 2, 2, 1, 4, 4, 4]
 
 
 class tetromino:
-    rows = 20
-    cols = 20
-
     def __init__(self, column, row, shape):
         self.x = column
         self.y = row
@@ -122,17 +119,27 @@ class tetromino:
         self.color = shape_colors[shape]
         self.rotation = 0
 
+    def getCoordinates(self):
+        block = []
+        for row in range(-2, 3, 1):
+            for col in range(-2, 3, 1):
+                if shapes[self.shape][self.rotation][col + 2][row + 2] == '0':
+                    block.append({'r':row+self.y, 'c':col+self.x})
+        return block
 
 class GameWindow:
     started = False
     timer = None
     totalTime = 0
     gamescore = 0
-    timestr = "00:00"
     currentBlock = None
+    holdBlock = None
+    holdUsed = False
     nextBlockShape = 0
+    holdBlockShape = 0
 
     gamemap = None
+    combo = 0
 
     root = None
     mainFrame = None
@@ -140,8 +147,13 @@ class GameWindow:
     subFrame = None
     timerFrame = None
     scoreFrame = None
-    nextblockFrame = None
-    nextblockImage = None
+    nextBlockFrame = None
+    nextBlockImage = None
+    holdBlockFrame = None
+    holdBlockImage = None
+
+    messageFrame = None
+    gameMessage= None
 
     def __init__(self):
         """
@@ -152,16 +164,16 @@ class GameWindow:
         self.gamemap = [[7 for i in range(10)] for j in range(20)]
 
         self.root = Tk()
-        self.root.title('py-tris')
-        self.root.geometry('{}x{}'.format(399, 600))
+        self.root.title('pyTetris')
+        self.root.geometry('{}x{}'.format(399, 640))
         self.nextBlockShape = random.randint(0,6)
-        self.mainFrame = Frame(self.root, bg='gray2', width=350, height=600)
-
+        self.mainFrame = Frame(self.root, bg='#FFF', width=350, height=600)
+        self.messageFrame = Frame(self.root, bg='gray', width=350, height=30)
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
-        # 메인 프레임은 좌우로 게임, 사이드바(서브프레임) 로 나눠집니다
-        self.mainFrame.grid(row=1, sticky="nsew")
+        # 메인 프레임은 좌우로 게임프레임, 서브프레임(사이드바) 로 나눠집니다
+        self.mainFrame.grid(row=0, sticky="nsew", pady=(0,10))
         self.mainFrame.grid_rowconfigure(0, weight=1)
         self.mainFrame.grid_columnconfigure(1, weight=1)
 
@@ -171,8 +183,8 @@ class GameWindow:
         self.gameFrame.grid(row=0, column=1, sticky="nsew")
         self.subFrame.grid(row=0, column=2, sticky="ns")
 
-        # 서브프레임은 시간, 점수, 다음블럭, 게임시작(종료)버튼 으로 나눠집니다
-        self.subFrame.grid_rowconfigure(4, weight=1)
+        # 서브프레임은 시간, 점수, 다음블럭, 홀드블럭, 게임시작(종료)버튼 으로 나눠집니다
+        self.subFrame.grid_rowconfigure(6, weight=1)
         self.subFrame.grid_columnconfigure(0, weight=1)
 
         timerWrapper = Frame(self.subFrame)
@@ -192,37 +204,63 @@ class GameWindow:
         nextblockTitle = Label(nextblockWrapper, text="next block", font=("Helvetica", 16))
         nextblockTitle.grid()
         self.nextBlockShape = random.randint(0, 6)
-        path = 'b' + str(self.nextBlockShape) + '.png'
-        self.nextblockImage = PhotoImage(file=path)
-        self.nextblockFrame = Label(nextblockWrapper, image=self.nextblockImage)
-        self.nextblockFrame.grid()
+        path = 'source/b' + str(self.nextBlockShape) + '.png'
+        self.nextBlockImage = PhotoImage(file=path)
+        self.nextBlockFrame = Label(nextblockWrapper, image=self.nextBlockImage)
+        self.nextBlockFrame.grid()
+
+        holdblockWrapper = Frame(self.subFrame)
+        holdblockWrapper.grid(row=3, column=0, pady=10)
+        holdblockTitle = Label(holdblockWrapper, text="hold block", font=("Helvetica", 16))
+        holdblockTitle.grid()
+        self.holdBlockShape = 2
+        path2 = 'source/b' + str(self.holdBlockShape) + '.png'
+        self.holdBlockImage=PhotoImage(file=path2)
+        self.holdBlockFrame = Label(holdblockWrapper, image=self.holdBlockImage)
+        self.holdBlockFrame.grid()
+
+        textWrapper = Frame(self.subFrame)
+        textWrapper.grid(row=4, column=0)
+        text = Label(textWrapper, text="""
+→, ←, ↓: move block 
+   ↑     : rotate block 
+   h      : hold block 
+        """)
+        text.grid()
 
         startbuttonWrapper = Frame(self.subFrame)
-        startbuttonWrapper.grid(row=3, column=0, pady= 10)
-        self.startButton = Button(startbuttonWrapper, text="start", command=self.gamestart)
+        startbuttonWrapper.grid(row=5, column=0, pady= 10)
+        self.startButton = Button(startbuttonWrapper, text="start", command=self.gameStart, width=15)
         self.startButton.grid()
 
+        # 메세지 프레임은 최하단에 위치
+        self.messageFrame.grid(row=1, sticky="nsew")
+        self.gameMessage = Label(self.messageFrame, text="click 'start' button", font=("Helvetica", 14))
+        self.gameMessage.pack(fill='both')
+
         # 버튼을 바인드 함수를 처리하고
-        self.root.bind("<Any-KeyPress>", self.keyPressed)
         # 창을 보여줍니다
         self.root.mainloop()
 
-    def gamestart(self):
+    def gameStart(self):
         """
         시작 버튼 눌러지면 게임을 시작하거나, 종료
         """
         if self.started:
             self.timer.cancel()
             self.root.quit()
+            self.gameMessage.config(text="Good bye")
             return
         self.started = True
         self.startButton.config(text="quit")
 
+        self.root.bind("<Any-KeyPress>", self.keyPressed)
         self.makeNextBlock()
-        self.gameloop()
-        self.make_grid()
+        self.gameLoop()
+        self.makeGrid()
+        self.gameMessage.config(text="Let's go!")
 
-    def gameloop(self):
+    def gameLoop(self):
         """
          게임 종료시 스레드를 종료하고 창 종료
         """
@@ -230,14 +268,17 @@ class GameWindow:
             self.timer.cancel()
             self.root.quit()
         else:
+            # print total time
             self.totalTime = self.totalTime + 1
-            self.timestr = "{:02d}:{:02d}".format(self.totalTime // 60, self.totalTime % 60)
-            self.timerFrame.config(text=self.timestr)
-            self.timer = threading.Timer(1, self.gameloop)
+            timestr = "{:02d}:{:02d}".format(self.totalTime // 60, self.totalTime % 60)
+
+            # timer
+            self.timerFrame.config(text=timestr)
+            self.timer = threading.Timer(1, self.gameLoop)
             self.timer.start()
             if self.check_valid():
                 self.blockDown()
-            self.draw_rect()
+            self.drawBlcok()
 
     def keyPressed(self, event):
         key = event.keysym
@@ -249,7 +290,9 @@ class GameWindow:
             self.blockRotate()
         elif key == "Down":
             self.blockDown()
-        self.draw_rect()
+        elif key == "h":
+            self.hold()
+        self.drawBlcok()
 
 
     def blockDown(self):
@@ -258,9 +301,9 @@ class GameWindow:
         이동 불가능하면 그위치에 블럭을 멈추고 새로운 블럭생성, 줄 지우기 확인
         """
         self.currentBlock.y = self.currentBlock.y + 1
-        if self.check_colide():
+        if self.check_collision():
             self.currentBlock.y = self.currentBlock.y - 1
-            self.draw_block_bottom()
+            self.drawOtherBlock()
             self.check_line_clear()
             self.makeNextBlock()
 
@@ -274,7 +317,7 @@ class GameWindow:
         else:
             move = -1
         self.currentBlock.x = self.currentBlock.x + move
-        if self.check_colide():
+        if self.check_collision():
             # 이동 불가능하면 원위치
             self.currentBlock.x = self.currentBlock.x - move
 
@@ -291,14 +334,18 @@ class GameWindow:
     def makeNextBlock(self):
         """
         랜덤한 모양의 블럭을 생성하고 다음블럭 종류를 결정, 그림을 보여줌
+        홀드기능을 다시 사용할수있게함
         """
+        self.holdUsed = False
         self.currentBlock = tetromino(5, 1, self.nextBlockShape)
         self.nextBlockShape = random.randint(0, 6)
-        path = 'b' + str(self.nextBlockShape) + '.png'
-        self.nextblockImage = PhotoImage(file=path)
-        self.nextblockFrame.config(image = self.nextblockImage)
+        path = 'source/b' + str(self.nextBlockShape) + '.png'
+        self.nextBlockImage = PhotoImage(file=path)
+        self.nextBlockFrame.config(image = self.nextBlockImage)
+        if not self.check_valid() or self.check_collision():
+            self.gameOver()
 
-    def make_grid(self):
+    def makeGrid(self):
         """
         창 크기를 이용하여 30x30의 grid를 생성
         """
@@ -318,66 +365,63 @@ class GameWindow:
         """
         블럭이 있는위치가 valid 할시 True 리턴
         """
-        block = self.get4block()
+        block = self.currentBlock.getCoordinates()
         for cord in block:
             r = cord['r']
             c = cord['c']
-            if r > 19 or r < 0 or c > 9 or c < 0 :
+            if r > 19 or r < 0 or c > 8 or c < 0 :
                 return False
         return True
 
 
-    def check_colide(self):
+    def check_collision(self):
         """
         블럭이 땅에 도착하거나 다른 블럭과 충돌할시 True 리턴
         """
-        block = self.get4block()
+        block = self.currentBlock.getCoordinates()
         for cord in block:
             row = cord['r']
             col = cord['c']
-            if col < 0 or col > 9:
+            if col < 0 or col > 8:
                 return True
             if row == 20:
                 return True
             if self.gamemap[row][col] != 7:
                 if row == 1:
-                    self.gameend()
+                    self.gameOver()
                 return True
         return False
 
 
-    def gameend(self):
-        """
-        game end
-        """
+    def gameOver(self):
         self.started = False
+        self.gameMessage.config(text="Game Over")
 
     def check_line_clear(self):
         """
         row가 가득 차면 지우고 점수를 추가해줌
         한번에 여러줄이 지워지면 더 큰 점수를줌
         """
-
         # 블럭이 있는 row를 리스트로 정리
-        block = self.get4block()
+        block = self.currentBlock.getCoordinates()
         list = []
-        combo = 0
+        deleted_line = 0
         deleted_row =[]
         for cord in block:
             row = cord['r']
             if row not in list:
                 list.append(row)
 
-        # 새로 블럭이생긴 row에 대해서 체크
+        # 블럭있는 row에 대해서 지워져야할지 체크
         for row in list:
             rowcheck = True
-            for col in range(10):
+            for col in range(9):
                 if self.gamemap[row][col] == 7:
                     rowcheck = False
                     break
             if rowcheck:
-                combo = combo + 1
-                self.gamescore = self.gamescore + (1000 * combo)
+                deleted_line = deleted_line + 1
+                self.gamescore = self.gamescore + ((1000 + (500 * self.combo)) * deleted_line)
                 self.scoreFrame.config(text="{:05d}".format(self.gamescore))
                 deleted_row.append(row)
 
@@ -391,13 +435,23 @@ class GameWindow:
                 for col in range(10):
                     self.gamemap[row + deleted][col] = self.gamemap[row][col]
         self.redraw()
+        if deleted >= 1:
+            self.combo = self.combo + 1
+            self.gameMessage.config(text="good!")
+            if self.combo > 1:
+                if self.combo > 2:
+                    self.gameMessage.config(text="amazing! {} combo!".format(self.combo))
+                else:
+                    self.gameMessage.config(text="nice! {} combo!".format(self.combo))
+        else:
+            self.combo = 0
 
     def redraw(self):
         """
         줄을 지우고 새로 그림
         """
         self.gameFrame.delete('all')
-        self.make_grid()
+        self.makeGrid()
         for row in range(20):
             for col in range(10):
                 shape = self.gamemap[row][col]
@@ -409,14 +463,14 @@ class GameWindow:
                 end_y = start_y + 30
                 self.gameFrame.create_rectangle(start_x, start_y, end_x, end_y, fill=shape_colors[shape], tag='prev')
 
-    def draw_rect(self):
+    def drawBlcok(self):
         """
         current block은 매번 새로 그려줌
         미리 정의된 block shape 를 통해서 차지하고잇는부분에 색을 칠해줌
         """
         shape = self.currentBlock.shape
         self.gameFrame.delete('current')
-        block = self.get4block()
+        block = self.currentBlock.getCoordinates()
         for cord in block:
             row = cord['r']
             col = cord['c']
@@ -426,13 +480,13 @@ class GameWindow:
             end_y = start_y + 30
             self.gameFrame.create_rectangle(start_x, start_y, end_x, end_y, fill=shape_colors[shape], tag='current')
 
-    def draw_block_bottom(self):
+    def drawOtherBlock(self):
         """
         이미 땅에 도착한 블럭은 prev로써 계속 쌓임
         gamemap에 색깔(shape)과 함께 저장된다
         """
         shape = self.currentBlock.shape
-        block = self.get4block()
+        block = self.currentBlock.getCoordinates()
         for cord in block:
             row = cord['r']
             col = cord['c']
@@ -443,34 +497,49 @@ class GameWindow:
             self.gamemap[row][col]=shape
             self.gameFrame.create_rectangle(start_x, start_y, end_x, end_y, fill=shape_colors[shape], tag='prev')
 
-    def get4block(self):
+
+    def hold(self):
         """
-        current block이 존재하는 좌표 4개를 리턴
+        이전에 홀드한 블럭과 지금 블럭을 바꾸고 새로그림
         """
-        block = []
-        y, x, shape, rotate = self.currentBlock.y, self.currentBlock.x, self.currentBlock.shape, self.currentBlock.rotation
-        for row in range(-2, 3, 1):
-            for col in range(-2, 3, 1):
-                if shapes[shape][rotate][col + 2][row + 2] == '0':
-                    block.append({'r':row+y, 'c':col+x})
-        return block
+        if self.holdUsed:
+            self.gameMessage.config(text="Can't hold any more")
+            return
+        if self.holdBlockShape == self.currentBlock.shape:
+            self.gameMessage.config(text="Can't hold same block!")
+            return
+        self.holdUsed = True
+
+        print(self.currentBlock.shape, self.holdBlockShape)
+        path = 'source/b' + str(self.currentBlock.shape) + '.png'
+        self.holdBlockImage = PhotoImage(file=path)
+        self.holdBlockFrame.config(image=self.holdBlockImage)
+        self.currentBlock.shape, self.holdBlockShape = self.holdBlockShape, self.currentBlock.shape
+        self.currentBlock.y = 1
+        self.currentBlock.x = 5
+        self.currentBlock.rotation = 0
+        self.drawBlcok()
+        self.gameMessage.config(text="Block holded")
+
+
+class ResultWindow:
+    def __init__(self, score):
+        self.root=Tk()
+        self.root.title('Game Over')
+        self.root.geometry('{}x{}'.format(400, 100))
+        lbl = Label(self.root, text="game over")
+        lbl2 = Label(self.root, text="your score : {}".format(score), font=("Helvetica", 20))
+        btn = Button(self.root, text="Quit", command=lambda: self.root.quit())
+        lbl.pack()
+        lbl2.pack()
+        btn.pack()
+        self.root.mainloop()
 
 
 def main():
     game = GameWindow()
     score = game.gamescore
-
-    root=Tk()
-    root.title('Game Over')
-    root.geometry('{}x{}'.format(400, 100))
-    lbl = Label(root, text="game over")
-    lbl2 = Label(root, text="your score : {}".format(score), font=("Helvetica", 20))
-    btn = Button(root, text="ok", command=lambda: root.quit())
-    lbl.pack()
-    lbl2.pack()
-    btn.pack()
-    root.mainloop()
-
+    ResultWindow(score)
 
 if __name__ == '__main__':
     main()
